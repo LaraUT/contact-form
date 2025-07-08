@@ -5,26 +5,26 @@ const path = require('path');
 const { sql, pool, poolConnect } = require('./db/connection');
 const authRoutes = require('./routes/authRoutes');
 
-const app = express(); // ✅ Primero declaramos app
+const app = express();
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
 
-// ✅ Servir frontend desde carpeta public/
+// Frontend
 app.use(express.static(path.join(__dirname, '../contac_form-back-frony/public')));
 
-// ✅ Rutas de autenticación
+// Rutas auth
 app.use('/api/auth', authRoutes);
 
-// ✅ Ruta raíz
+// Home
 app.get('/', (req, res) => {
   res.send('API CRM operativa 🚀');
 });
-
-// ✅ Crear mensaje
 app.post('/api/contact', async (req, res) => {
   const { name, email, phone, message } = req.body;
+
+  console.log('📨 Nueva solicitud recibida:', { name, email, phone, message });
 
   try {
     await poolConnect;
@@ -39,14 +39,21 @@ app.post('/api/contact', async (req, res) => {
         SELECT SCOPE_IDENTITY() AS id;
       `);
 
-    res.status(201).json({ message: 'Mensaje enviado correctamente', id: result.recordset[0].id });
+    const newId = result.recordset?.[0]?.id;
+    if (!newId) {
+      return res.status(500).json({ error: 'No se pudo recuperar el ID del mensaje insertado' });
+    }
+
+    console.log(`✅ Mensaje insertado con ID ${newId}`);
+    res.status(201).json({ message: 'Mensaje enviado correctamente', id: newId });
   } catch (err) {
     console.error('❌ Error al guardar mensaje:', err);
     res.status(500).json({ error: 'Error al guardar el mensaje' });
   }
 });
 
-// ✅ Obtener todos los mensajes
+
+// GET /api/contact
 app.get('/api/contact', async (req, res) => {
   try {
     await poolConnect;
@@ -58,6 +65,7 @@ app.get('/api/contact', async (req, res) => {
   }
 });
 
+// PUT /api/contact/:id
 app.put('/api/contact/:id', async (req, res) => {
   const { id } = req.params;
   const { name, email, phone, message, status } = req.body;
@@ -89,34 +97,7 @@ app.put('/api/contact/:id', async (req, res) => {
   }
 });
 
-
-// ✅ Actualizar mensaje
-app.put('/api/contact/:id', async (req, res) => {
-  const { id } = req.params;
-  const { name, email, phone, message } = req.body;
-
-  try {
-    await poolConnect;
-    await pool.request()
-      .input('id', sql.Int, id)
-      .input('name', sql.NVarChar(100), name)
-      .input('email', sql.NVarChar(100), email)
-      .input('phone', sql.NVarChar(20), phone)
-      .input('message', sql.NVarChar(sql.MAX), message)
-      .query(`
-        UPDATE messages
-        SET name = @name, email = @email, phone = @phone, message = @message
-        WHERE id = @id
-      `);
-
-    res.status(200).json({ message: 'Mensaje actualizado correctamente' });
-  } catch (err) {
-    console.error('❌ Error al actualizar mensaje:', err);
-    res.status(500).json({ error: 'Error al actualizar el mensaje' });
-  }
-});
-
-// ✅ Eliminar mensaje
+// DELETE /api/contact/:id
 app.delete('/api/contact/:id', async (req, res) => {
   const { id } = req.params;
 
@@ -133,7 +114,7 @@ app.delete('/api/contact/:id', async (req, res) => {
   }
 });
 
-// ✅ Iniciar servidor
+// Lanzar servidor
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en http://localhost:${PORT}`);
