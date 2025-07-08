@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { sql, pool, poolConnect } = require('./db/connection');
+const pool = require('./db/connection'); // adaptado a mysql2
 const authRoutes = require('./routes/authRoutes');
 
 const app = express();
@@ -11,37 +11,32 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Frontend
+// Frontend estático
 app.use(express.static(path.join(__dirname, '../contac_form-back-frony/public')));
 
-// Rutas auth
+// Rutas
 app.use('/api/auth', authRoutes);
 
 // Home
 app.get('/', (req, res) => {
   res.send('API CRM operativa 🚀');
 });
+
+// POST /api/contact - Insertar mensaje
 app.post('/api/contact', async (req, res) => {
   const { name, email, phone, message } = req.body;
 
   console.log('📨 Nueva solicitud recibida:', { name, email, phone, message });
 
   try {
-    await poolConnect;
-    const result = await pool.request()
-      .input('name', sql.NVarChar(100), name)
-      .input('email', sql.NVarChar(100), email)
-      .input('phone', sql.NVarChar(20), phone)
-      .input('message', sql.NVarChar(sql.MAX), message)
-      .query(`
-        INSERT INTO messages (name, email, phone, message)
-        VALUES (@name, @email, @phone, @message);
-        SELECT SCOPE_IDENTITY() AS id;
-      `);
+    const [result] = await pool.execute(
+      `INSERT INTO messages (name, email, phone, message) VALUES (?, ?, ?, ?)`,
+      [name, email, phone, message]
+    );
 
-    const newId = result.recordset?.[0]?.id;
+    const newId = result.insertId;
     if (!newId) {
-      return res.status(500).json({ error: 'No se pudo recuperar el ID del mensaje insertado' });
+      return res.status(500).json({ error: 'No se pudo obtener el ID del mensaje insertado' });
     }
 
     console.log(`✅ Mensaje insertado con ID ${newId}`);
@@ -52,43 +47,40 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-
-// GET /api/contact
+// GET /api/contact - Obtener todos los mensajes
 app.get('/api/contact', async (req, res) => {
   try {
-    await poolConnect;
-    const result = await pool.request().query('SELECT * FROM messages ORDER BY created_at DESC');
-    res.status(200).json(result.recordset);
+    const [rows] = await pool.execute('SELECT * FROM messages ORDER BY created_at DESC');
+    res.status(200).json(rows);
   } catch (err) {
     console.error('❌ Error al obtener mensajes:', err);
     res.status(500).json({ error: 'Error al obtener los mensajes' });
   }
 });
 
-// PUT /api/contact/:id
+// PUT /api/contact/:id - Actualizar un mensaje
 app.put('/api/contact/:id', async (req, res) => {
   const { id } = req.params;
   const { name, email, phone, message, status } = req.body;
 
   try {
-    await poolConnect;
-    await pool.request()
-      .input('id', sql.Int, id)
-      .input('name', sql.NVarChar(100), name || '')
-      .input('email', sql.NVarChar(100), email || '')
-      .input('phone', sql.NVarChar(20), phone || '')
-      .input('message', sql.NVarChar(sql.MAX), message || '')
-      .input('status', sql.NVarChar(50), status || 'nuevo')
-      .query(`
-        UPDATE messages
-        SET 
-          name = CASE WHEN @name != '' THEN @name ELSE name END,
-          email = CASE WHEN @email != '' THEN @email ELSE email END,
-          phone = CASE WHEN @phone != '' THEN @phone ELSE phone END,
-          message = CASE WHEN @message != '' THEN @message ELSE message END,
-          status = @status
-        WHERE id = @id
-      `);
+    const [result] = await pool.execute(
+      `UPDATE messages SET 
+        name = IF(? != '', ?, name),
+        email = IF(? != '', ?, email),
+        phone = IF(? != '', ?, phone),
+        message = IF(? != '', ?, message),
+        status = ?
+       WHERE id = ?`,
+      [
+        name, name,
+        email, email,
+        phone, phone,
+        message, message,
+        status || 'nuevo',
+        id
+      ]
+    );
 
     res.status(200).json({ message: 'Lead actualizado correctamente' });
   } catch (err) {
@@ -97,16 +89,12 @@ app.put('/api/contact/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/contact/:id
+// DELETE /api/contact/:id - Eliminar mensaje
 app.delete('/api/contact/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    await poolConnect;
-    await pool.request()
-      .input('id', sql.Int, id)
-      .query('DELETE FROM messages WHERE id = @id');
-
+    await pool.execute('DELETE FROM messages WHERE id = ?', [id]);
     res.status(200).json({ message: 'Mensaje eliminado correctamente' });
   } catch (err) {
     console.error('❌ Error al eliminar mensaje:', err);

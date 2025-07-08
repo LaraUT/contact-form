@@ -1,22 +1,21 @@
 require('dotenv').config();
-const sql = require('mssql');
+const mysql = require('mysql2/promise');
 
-const config = {
-  user: process.env.DB_USER,
+// Configuración para conectar con MySQL en Railway
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,       // metro.proxy.rlwy.net
+  port: process.env.DB_PORT,       // 50564
+  user: process.env.DB_USER,       // root
   password: process.env.DB_PASSWORD,
-  server: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  options: {
-    encrypt: false, // true si usas Azure SQL en la nube
-    trustServerCertificate: true // necesario para evitar errores de certificado en local
-  }
-};
+  database: process.env.DB_NAME,   // railway
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+});
 
-const pool = new sql.ConnectionPool(config);
-const poolConnect = pool.connect();
+// Verifica si la conexión es exitosa
+pool.getConnection()
+  .then(() => console.log('✅ Conectado a MySQL en Railway'))
+  .catch(err => console.error('❌ Error de conexión a MySQL:', err));
 
-poolConnect
-  .then(() => console.log('✅ Conectado a SQL Server desde Azure Data Studio / Docker'))
-  .catch(err => console.error('❌ Error de conexión:', err));
-
-module.exports = { sql, pool, poolConnect };
+module.exports = pool;
